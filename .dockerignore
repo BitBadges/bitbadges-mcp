@@ -8,8 +8,6 @@ README.md
 coverage
 .coverage
 .vscode
-src/
-tsconfig.json
 web-interface/
 test-server.js
 *.md
