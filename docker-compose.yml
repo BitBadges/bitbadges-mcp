@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  bitbadges-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bitbadges-mcp-server
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - bitbadges-network
+
+  bitbadges-web:
+    build:
+      context: ./web-interface
+      dockerfile: Dockerfile
+    container_name: bitbadges-web-interface
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - MCP_SERVER_URL=http://bitbadges-mcp:3000
+    depends_on:
+      bitbadges-mcp:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - bitbadges-network
+
+networks:
+  bitbadges-network:
+    driver: bridge
+
+volumes:
+  bitbadges-data:

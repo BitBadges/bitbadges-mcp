@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JSON Display Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .tool-result {
+            background: #f8f9fa;
+            padding: 0;
+            border-radius: 6px;
+            margin-top: 8px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #e9ecef;
+            line-height: 1.4;
+        }
+        .tool-result .json-response {
+            margin: 0;
+        }
+        .tool-result .json-response pre {
+            margin: 0;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 0 0 6px 6px;
+        }
+        .json-response {
+            margin-top: 5px;
+        }
+        .json-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 8px;
+            background: #e9ecef;
+            border-radius: 4px 4px 0 0;
+            font-size: 11px;
+            color: #6c757d;
+        }
+        .json-info {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+        }
+        .copy-btn {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 10px;
+            transition: background 0.2s;
+        }
+        .copy-btn:hover {
+            background: #5a6268;
+        }
+        .json-key {
+            color: #0969da;
+            font-weight: 600;
+        }
+        .json-string {
+            color: #0a3069;
+        }
+        .json-number {
+            color: #0550ae;
+        }
+        .json-boolean {
+            color: #8250df;
+            font-weight: 600;
+        }
+        .json-null {
+            color: #656d76;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <h1>JSON Display Test</h1>
+    
+    <div class="test-container">
+        <h2>Before (Raw JSON String)</h2>
+        <div class="tool-result" style="padding: 12px;">
+            <pre>"{\"collections\":[{\"collectionId\":\"1\",\"badgeMetadata\":[{\"name\":\"Test Badge\",\"description\":\"A test badge\",\"image\":\"https://example.com/image.png\"}],\"transferActivity\":{\"activity\":[{\"from\":\"bb1...\",\"to\":\"bb2...\",\"amount\":\"1\"}]}}]}"</pre>
+        </div>
+    </div>
+    
+    <div class="test-container">
+        <h2>After (Formatted JSON)</h2>
+        <div class="tool-result">
+            <div id="testResult"></div>
+        </div>
+    </div>
+
+    <script>
+        function formatJsonResponse(data) {
+            try {
+                // If data is already a string, try to parse it first
+                let jsonData = data;
+                if (typeof data === 'string') {
+                    try {
+                        jsonData = JSON.parse(data);
+                    } catch (e) {
+                        // If parsing fails, treat as plain text
+                        return `<pre style="white-space: pre-wrap; word-wrap: break-word;">${escapeHtml(data)}</pre>`;
+                    }
+                }
+                
+                // Format the JSON with syntax highlighting
+                const formatted = JSON.stringify(jsonData, null, 2);
+                const highlighted = syntaxHighlightJson(formatted);
+                
+                // Add copy button and collapsible functionality for large responses
+                const lines = formatted.split('\n').length;
+                const uniqueId = 'json-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+                
+                let html = `
+                    <div class="json-response">
+                        <div class="json-header">
+                            <span class="json-info">${lines} lines, ${formatted.length} characters</span>
+                            <button class="copy-btn" onclick="copyJsonToClipboard('${uniqueId}')">📋 Copy</button>
+                        </div>
+                        <pre id="${uniqueId}" style="white-space: pre-wrap; word-wrap: break-word;">${highlighted}</pre>
+                    </div>
+                `;
+                
+                return html;
+            } catch (error) {
+                return `<pre style="white-space: pre-wrap; word-wrap: break-word;">${escapeHtml(String(data))}</pre>`;
+            }
+        }
+        
+        function syntaxHighlightJson(json) {
+            return json
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+                    let cls = 'json-number';
+                    if (/^"/.test(match)) {
+                        if (/:$/.test(match)) {
+                            cls = 'json-key';
+                        } else {
+                            cls = 'json-string';
+                        }
+                    } else if (/true|false/.test(match)) {
+                        cls = 'json-boolean';
+                    } else if (/null/.test(match)) {
+                        cls = 'json-null';
+                    }
+                    return '<span class="' + cls + '">' + match + '</span>';
+                });
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function copyJsonToClipboard(elementId) {
+            const element = document.getElementById(elementId);
+            if (element) {
+                const text = element.textContent || element.innerText || '';
+                
+                navigator.clipboard.writeText(text).then(() => {
+                    const copyBtn = element.parentElement.querySelector('.copy-btn');
+                    if (copyBtn) {
+                        const originalText = copyBtn.textContent;
+                        copyBtn.textContent = '✅ Copied!';
+                        copyBtn.style.background = '#48bb78';
+                        setTimeout(() => {
+                            copyBtn.textContent = originalText;
+                            copyBtn.style.background = '';
+                        }, 2000);
+                    }
+                }).catch(err => {
+                    console.error('Failed to copy: ', err);
+                });
+            }
+        }
+        
+        // Test the formatting
+        const testData = {
+            "collections": [
+                {
+                    "collectionId": "1",
+                    "badgeMetadata": [
+                        {
+                            "name": "Test Badge",
+                            "description": "A test badge with escaped characters like \"quotes\" and \n newlines",
+                            "image": "https://example.com/image.png",
+                            "attributes": {
+                                "rarity": "common",
+                                "level": 1,
+                                "active": true,
+                                "metadata": null
+                            }
+                        }
+                    ],
+                    "transferActivity": {
+                        "activity": [
+                            {
+                                "from": "bb1qxy2tc4xrzqwzk28yrdxq3k2hj7khg2vhd0v6te",
+                                "to": "bb1qxy2tc4xrzqwzk28yrdxq3k2hj7khg2vhd0v6te",
+                                "amount": "1",
+                                "timestamp": "2024-01-01T00:00:00Z"
+                            }
+                        ]
+                    }
+                }
+            ]
+        };
+        
+        document.getElementById('testResult').innerHTML = formatJsonResponse(testData);
+    </script>
+</body>
+</html>

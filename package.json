@@ -1,0 +1,44 @@
+{
+  "name": "bitbadges-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for BitBadges API",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "start:http": "node dist/http-server.js",
+    "docker:build": "docker build -t bitbadges-mcp .",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:build-all": "npm run build && cd web-interface && npm run build && cd .. && docker-compose build",
+    "docker:dev": "docker-compose up --build",
+    "k8s:deploy": "kubectl apply -f k8s/",
+    "k8s:delete": "kubectl delete -f k8s/",
+    "deploy": "npm run build && npm run docker:build && npm run k8s:deploy"
+  },
+  "keywords": [
+    "mcp",
+    "bitbadges",
+    "api",
+    "blockchain"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "axios": "^1.6.8",
+    "js-yaml": "^4.1.0",
+    "zod": "^3.22.4",
+    "express": "^4.18.0",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.0.0",
+    "@types/express": "^4.17.0",
+    "@types/cors": "^2.8.0",
+    "typescript": "^5.0.0"
+  }
+}

@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BitBadges MCP Chatbot</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .container {
+            width: 95%;
+            max-width: 1200px;
+            height: 90vh;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+            display: flex;
+            overflow: hidden;
+        }
+
+        .chat-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #e0e0e0;
+        }
+
+        .tools-panel {
+            width: 400px;
+            background: #f8f9fa;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .header p {
+            margin: 5px 0 0 0;
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background: #fafafa;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            display: flex;
+            align-items: flex-start;
+        }
+
+        .message.user {
+            justify-content: flex-end;
+        }
+
+        .message-content {
+            max-width: 70%;
+            padding: 12px 16px;
+            border-radius: 18px;
+            word-wrap: break-word;
+        }
+
+        .message.user .message-content {
+            background: #667eea;
+            color: white;
+            border-bottom-right-radius: 6px;
+        }
+
+        .message.assistant .message-content {
+            background: white;
+            color: #333;
+            border: 1px solid #e0e0e0;
+            border-bottom-left-radius: 6px;
+        }
+
+        .message.system .message-content {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .tool-call {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .tool-call-header {
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+
+        .tool-result {
+            background: #f8f9fa;
+            padding: 0;
+            border-radius: 6px;
+            margin-top: 8px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #e9ecef;
+            line-height: 1.4;
+        }
+        
+        .tool-result .json-response {
+            margin: 0;
+        }
+        
+        .tool-result .json-response pre {
+            margin: 0;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 0 0 6px 6px;
+        }
+        
+        .tool-result pre {
+            margin: 0;
+            font-family: inherit;
+            font-size: inherit;
+            line-height: inherit;
+        }
+        
+        .json-key {
+            color: #0969da;
+            font-weight: 600;
+        }
+        
+        .json-string {
+            color: #0a3069;
+        }
+        
+        .json-number {
+            color: #0550ae;
+        }
+        
+        .json-boolean {
+            color: #8250df;
+            font-weight: 600;
+        }
+        
+        .json-null {
+            color: #656d76;
+            font-style: italic;
+        }
+        
+        .json-response {
+            margin-top: 5px;
+        }
+        
+        .json-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 8px;
+            background: #e9ecef;
+            border-radius: 4px 4px 0 0;
+            font-size: 11px;
+            color: #6c757d;
+        }
+        
+        .json-info {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+        }
+        
+        .copy-btn {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 10px;
+            transition: background 0.2s;
+        }
+        
+        .copy-btn:hover {
+            background: #5a6268;
+        }
+
+        .chat-input {
+            display: flex;
+            padding: 20px;
+            background: white;
+            border-top: 1px solid #e0e0e0;
+            gap: 10px;
+        }
+
+        .chat-input input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 1px solid #ddd;
+            border-radius: 25px;
+            outline: none;
+            font-size: 16px;
+        }
+
+        .chat-input input:focus {
+            border-color: #667eea;
+        }
+
+        .chat-input button {
+            padding: 12px 24px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        .chat-input button:hover {
+            background: #5a67d8;
+        }
+
+        .tools-header {
+            padding: 20px;
+            background: white;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .tools-header h2 {
+            margin: 0;
+            font-size: 18px;
+            color: #333;
+        }
+
+        .tools-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .tool-item {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            overflow: hidden;
+            transition: all 0.2s;
+        }
+
+        .tool-item:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            border-color: #667eea;
+        }
+
+        .tool-header {
+            padding: 15px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e0e0e0;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .tool-name {
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .tool-description {
+            color: #666;
+            font-size: 12px;
+            margin-top: 2px;
+        }
+
+        .tool-toggle {
+            color: #667eea;
+            font-size: 18px;
+        }
+
+        .tool-form {
+            padding: 15px;
+            display: none;
+        }
+
+        .tool-form.expanded {
+            display: block;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #333;
+            font-size: 13px;
+        }
+
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 13px;
+            outline: none;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus {
+            border-color: #667eea;
+        }
+
+        .form-group textarea {
+            height: 80px;
+            resize: vertical;
+            font-family: 'Courier New', monospace;
+        }
+
+        .tool-submit {
+            width: 100%;
+            padding: 10px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+
+        .tool-submit:hover {
+            background: #5a67d8;
+        }
+
+        .tool-submit:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .status-indicator.connected {
+            background: #48bb78;
+        }
+
+        .status-indicator.disconnected {
+            background: #f56565;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                width: 100%;
+                height: 100vh;
+                border-radius: 0;
+                flex-direction: column;
+            }
+
+            .tools-panel {
+                width: 100%;
+                height: 40vh;
+                border-right: none;
+                border-top: 1px solid #e0e0e0;
+            }
+
+            .chat-panel {
+                height: 60vh;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="chat-panel">
+            <div class="header">
+                <h1>🏆 BitBadges MCP Chatbot</h1>
+                <p><span class="status-indicator" id="connectionStatus"></span>Interactive API Explorer</p>
+            </div>
+            
+            <div class="chat-messages" id="chatMessages">
+                <div class="message system">
+                    <div class="message-content">
+                        Welcome to the BitBadges MCP Chatbot! 🚀<br><br>
+                        Start by configuring your API key: <strong>"configure api key YOUR_KEY"</strong><br><br>
+                        Then try commands like:<br>
+                        • "status" - Check API health<br>
+                        • "search developer" - Search collections<br>
+                        • "account bb1..." - Look up accounts<br>
+                        • "collection 1" - Get collection info
+                    </div>
+                </div>
+            </div>
+            
+            <div class="chat-input">
+                <input 
+                    type="text" 
+                    id="messageInput" 
+                    placeholder="Type a command or message..."
+                    autocomplete="off"
+                >
+                <button id="sendButton">Send</button>
+            </div>
+        </div>
+        
+        <div class="tools-panel">
+            <div class="tools-header">
+                <h2>🔧 Available Tools</h2>
+            </div>
+            
+            <div class="tools-list" id="toolsList">
+                <div style="text-align: center; padding: 40px; color: #666;">
+                    <div class="loading"></div>
+                    <p style="margin-top: 10px;">Loading tools...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Socket.IO connection
+        const socket = io();
+        
+        // UI Elements
+        const chatMessages = document.getElementById('chatMessages');
+        const messageInput = document.getElementById('messageInput');
+        const sendButton = document.getElementById('sendButton');
+        const toolsList = document.getElementById('toolsList');
+        const connectionStatus = document.getElementById('connectionStatus');
+        
+        // Connection status
+        socket.on('connect', () => {
+            connectionStatus.className = 'status-indicator connected';
+            console.log('Connected to server');
+        });
+        
+        socket.on('disconnect', () => {
+            connectionStatus.className = 'status-indicator disconnected';
+            console.log('Disconnected from server');
+        });
+        
+        // Chat functionality
+        socket.on('chat_history', (messages) => {
+            chatMessages.innerHTML = '';
+            messages.forEach(addMessageToChat);
+        });
+        
+        socket.on('new_message', (message) => {
+            addMessageToChat(message);
+        });
+        
+        function addMessageToChat(message) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${message.type}`;
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            contentDiv.innerHTML = formatMessageContent(message.content);
+            
+            if (message.toolCall) {
+                const toolDiv = document.createElement('div');
+                toolDiv.className = 'tool-call';
+                
+                const headerDiv = document.createElement('div');
+                headerDiv.className = 'tool-call-header';
+                headerDiv.textContent = `🔧 ${message.toolCall.name}`;
+                
+                if (message.toolCall.result) {
+                    const resultDiv = document.createElement('div');
+                    resultDiv.className = 'tool-result';
+                    resultDiv.innerHTML = formatJsonResponse(message.toolCall.result);
+                    toolDiv.appendChild(headerDiv);
+                    toolDiv.appendChild(resultDiv);
+                } else if (message.toolCall.error) {
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'tool-result';
+                    errorDiv.style.color = '#dc3545';
+                    errorDiv.textContent = message.toolCall.error;
+                    toolDiv.appendChild(headerDiv);
+                    toolDiv.appendChild(errorDiv);
+                }
+                
+                contentDiv.appendChild(toolDiv);
+            }
+            
+            messageDiv.appendChild(contentDiv);
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+        
+        function formatMessageContent(content) {
+            // Basic formatting for better readability
+            return content
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/`(.*?)`/g, '<code style="background:#f1f3f4;padding:2px 4px;border-radius:3px;">$1</code>')
+                .replace(/\n/g, '<br>');
+        }
+        
+        function formatJsonResponse(data) {
+            try {
+                // If data is already a string, try to parse it first
+                let jsonData = data;
+                if (typeof data === 'string') {
+                    try {
+                        jsonData = JSON.parse(data);
+                    } catch (e) {
+                        // If parsing fails, treat as plain text
+                        return `<pre style="white-space: pre-wrap; word-wrap: break-word;">${escapeHtml(data)}</pre>`;
+                    }
+                }
+                
+                // Format the JSON with syntax highlighting
+                const formatted = JSON.stringify(jsonData, null, 2);
+                const highlighted = syntaxHighlightJson(formatted);
+                
+                // Add copy button and collapsible functionality for large responses
+                const lines = formatted.split('\n').length;
+                const uniqueId = 'json-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+                
+                let html = `
+                    <div class="json-response">
+                        <div class="json-header">
+                            <span class="json-info">${lines} lines, ${formatted.length} characters</span>
+                            <button class="copy-btn" onclick="copyJsonToClipboard('${uniqueId}')">📋 Copy</button>
+                        </div>
+                        <pre id="${uniqueId}" style="white-space: pre-wrap; word-wrap: break-word;">${highlighted}</pre>
+                    </div>
+                `;
+                
+                return html;
+            } catch (error) {
+                return `<pre style="white-space: pre-wrap; word-wrap: break-word;">${escapeHtml(String(data))}</pre>`;
+            }
+        }
+        
+        function syntaxHighlightJson(json) {
+            return json
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+                    let cls = 'json-number';
+                    if (/^"/.test(match)) {
+                        if (/:$/.test(match)) {
+                            cls = 'json-key';
+                        } else {
+                            cls = 'json-string';
+                        }
+                    } else if (/true|false/.test(match)) {
+                        cls = 'json-boolean';
+                    } else if (/null/.test(match)) {
+                        cls = 'json-null';
+                    }
+                    return '<span class="' + cls + '">' + match + '</span>';
+                });
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function copyJsonToClipboard(elementId) {
+            const element = document.getElementById(elementId);
+            if (element) {
+                // Get the raw text content without HTML tags
+                const text = element.textContent || element.innerText || '';
+                
+                navigator.clipboard.writeText(text).then(() => {
+                    // Visual feedback
+                    const copyBtn = element.parentElement.querySelector('.copy-btn');
+                    if (copyBtn) {
+                        const originalText = copyBtn.textContent;
+                        copyBtn.textContent = '✅ Copied!';
+                        copyBtn.style.background = '#48bb78';
+                        setTimeout(() => {
+                            copyBtn.textContent = originalText;
+                            copyBtn.style.background = '';
+                        }, 2000);
+                    }
+                }).catch(err => {
+                    console.error('Failed to copy: ', err);
+                });
+            }
+        }
+        
+        function sendMessage() {
+            const message = messageInput.value.trim();
+            if (!message) return;
+            
+            socket.emit('chat_message', { message });
+            messageInput.value = '';
+        }
+        
+        sendButton.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+        
+        // Tools functionality
+        socket.on('tools_list', (response) => {
+            if (response.result && response.result.tools) {
+                renderTools(response.result.tools);
+            }
+        });
+        
+        socket.emit('get_tools');
+        
+        function renderTools(tools) {
+            toolsList.innerHTML = '';
+            
+            tools.forEach(tool => {
+                const toolDiv = document.createElement('div');
+                toolDiv.className = 'tool-item';
+                
+                const headerDiv = document.createElement('div');
+                headerDiv.className = 'tool-header';
+                headerDiv.onclick = () => toggleTool(toolDiv);
+                
+                headerDiv.innerHTML = `
+                    <div>
+                        <div class="tool-name">${tool.name}</div>
+                        <div class="tool-description">${tool.description}</div>
+                    </div>
+                    <div class="tool-toggle">▼</div>
+                `;
+                
+                const formDiv = document.createElement('div');
+                formDiv.className = 'tool-form';
+                formDiv.innerHTML = generateToolForm(tool);
+                
+                toolDiv.appendChild(headerDiv);
+                toolDiv.appendChild(formDiv);
+                toolsList.appendChild(toolDiv);
+            });
+        }
+        
+        function toggleTool(toolDiv) {
+            const form = toolDiv.querySelector('.tool-form');
+            const toggle = toolDiv.querySelector('.tool-toggle');
+            
+            if (form.classList.contains('expanded')) {
+                form.classList.remove('expanded');
+                toggle.textContent = '▼';
+            } else {
+                form.classList.add('expanded');
+                toggle.textContent = '▲';
+            }
+        }
+        
+        function generateToolForm(tool) {
+            const schema = tool.inputSchema;
+            let formHTML = '';
+            
+            if (schema.properties) {
+                Object.entries(schema.properties).forEach(([key, prop]) => {
+                    const required = schema.required && schema.required.includes(key);
+                    const requiredText = required ? ' *' : '';
+                    
+                    if (prop.type === 'string') {
+                        formHTML += `
+                            <div class="form-group">
+                                <label>${key}${requiredText}</label>
+                                <input type="text" name="${key}" placeholder="${prop.description || ''}" ${required ? 'required' : ''}>
+                            </div>
+                        `;
+                    } else if (prop.type === 'object' || prop.type === 'array') {
+                        formHTML += `
+                            <div class="form-group">
+                                <label>${key}${requiredText} (JSON)</label>
+                                <textarea name="${key}" placeholder="${prop.description || 'Enter JSON object'}" ${required ? 'required' : ''}></textarea>
+                            </div>
+                        `;
+                    }
+                });
+            }
+            
+            formHTML += `
+                <button type="button" class="tool-submit" onclick="executeTool('${tool.name}', this)">
+                    Execute Tool
+                </button>
+            `;
+            
+            return formHTML;
+        }
+        
+        function executeTool(toolName, button) {
+            const form = button.parentElement;
+            const inputs = form.querySelectorAll('input, textarea');
+            const args = {};
+            
+            try {
+                inputs.forEach(input => {
+                    if (input.name && input.value) {
+                        if (input.type === 'text') {
+                            args[input.name] = input.value;
+                        } else {
+                            args[input.name] = JSON.parse(input.value);
+                        }
+                    }
+                });
+                
+                button.disabled = true;
+                button.textContent = 'Executing...';
+                
+                socket.emit('tool_call', { toolName, arguments: args });
+                
+                setTimeout(() => {
+                    button.disabled = false;
+                    button.textContent = 'Execute Tool';
+                }, 2000);
+                
+            } catch (error) {
+                alert('Error parsing JSON: ' + error.message);
+                button.disabled = false;
+                button.textContent = 'Execute Tool';
+            }
+        }
+        
+        // Focus input on load
+        window.addEventListener('load', () => {
+            messageInput.focus();
+        });
+    </script>
+</body>
+</html>
