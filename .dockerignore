@@ -8,7 +8,8 @@ README.md
 coverage
 .coverage
 .vscode
-web-interface/
+web-interface/node_modules
+web-interface/dist
 test-server.js
 *.md
 .DS_Store
