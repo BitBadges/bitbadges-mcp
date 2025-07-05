@@ -402,6 +402,83 @@
             100% { transform: rotate(360deg); }
         }
 
+        .api-key-setup {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px;
+            text-align: center;
+        }
+
+        .api-key-setup h3 {
+            margin: 0 0 10px 0;
+            color: #856404;
+            font-size: 18px;
+        }
+
+        .api-key-setup p {
+            margin: 0 0 15px 0;
+            color: #856404;
+            font-size: 14px;
+        }
+
+        .api-key-input {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-top: 15px;
+        }
+
+        .api-key-input input {
+            flex: 1;
+            padding: 10px 15px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            outline: none;
+        }
+
+        .api-key-input input:focus {
+            border-color: #ffc107;
+        }
+
+        .api-key-input button {
+            padding: 10px 20px;
+            background: #ffc107;
+            color: #856404;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .api-key-input button:hover {
+            background: #ffb347;
+        }
+
+        .api-key-input button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .api-key-success {
+            background: #d4edda;
+            border: 2px solid #28a745;
+            color: #155724;
+        }
+
+        .api-key-error {
+            background: #f8d7da;
+            border: 2px solid #dc3545;
+            color: #721c24;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
         @media (max-width: 768px) {
             .container {
                 width: 100%;
@@ -420,6 +497,10 @@
             .chat-panel {
                 height: 60vh;
             }
+            
+            .api-key-input {
+                flex-direction: column;
+            }
         }
     </style>
 </head>
@@ -431,12 +512,21 @@
                 <p><span class="status-indicator" id="connectionStatus"></span>Interactive API Explorer</p>
             </div>
             
+            <!-- API Key Setup Section -->
+            <div class="api-key-setup" id="apiKeySetup">
+                <h3>🔑 Configure Your BitBadges API Key</h3>
+                <p>Enter your BitBadges API key to start using the chatbot. Get your key from the <a href="https://bitbadges.io/developer" target="_blank">BitBadges Developer Portal</a>.</p>
+                <div class="api-key-input">
+                    <input type="password" id="apiKeyInput" placeholder="Enter your API key..." autocomplete="off">
+                    <button id="configureApiKey">Configure</button>
+                </div>
+            </div>
+
             <div class="chat-messages" id="chatMessages">
                 <div class="message system">
                     <div class="message-content">
                         Welcome to the BitBadges MCP Chatbot! 🚀<br><br>
-                        Start by configuring your API key: <strong>"configure api key YOUR_KEY"</strong><br><br>
-                        Then try commands like:<br>
+                        Once you configure your API key above, try commands like:<br>
                         • "status" - Check API health<br>
                         • "search developer" - Search collections<br>
                         • "account bb1..." - Look up accounts<br>
@@ -480,11 +570,48 @@
         const sendButton = document.getElementById('sendButton');
         const toolsList = document.getElementById('toolsList');
         const connectionStatus = document.getElementById('connectionStatus');
+        const apiKeySetup = document.getElementById('apiKeySetup');
+        const apiKeyInput = document.getElementById('apiKeyInput');
+        const configureApiKey = document.getElementById('configureApiKey');
+        
+        // Track API key status
+        let apiKeyConfigured = false;
         
         // Connection status
         socket.on('connect', () => {
             connectionStatus.className = 'status-indicator connected';
             console.log('Connected to server');
+        });
+        
+        // Handle API key status
+        socket.on('api_key_status', (data) => {
+            apiKeyConfigured = data.configured;
+            if (apiKeyConfigured) {
+                apiKeySetup.classList.add('hidden');
+            } else {
+                apiKeySetup.classList.remove('hidden');
+            }
+        });
+        
+        socket.on('api_key_configured', (data) => {
+            if (data.success) {
+                apiKeyConfigured = true;
+                apiKeySetup.className = 'api-key-setup api-key-success';
+                apiKeySetup.querySelector('h3').textContent = '✓ API Key Configured Successfully!';
+                apiKeySetup.querySelector('p').textContent = 'You can now use all BitBadges features. This setup will be hidden in a few seconds.';
+                apiKeyInput.style.display = 'none';
+                
+                // Hide the setup after a delay
+                setTimeout(() => {
+                    apiKeySetup.classList.add('hidden');
+                }, 3000);
+            } else {
+                apiKeySetup.className = 'api-key-setup api-key-error';
+                apiKeySetup.querySelector('h3').textContent = '✗ API Key Configuration Failed';
+                apiKeySetup.querySelector('p').textContent = data.error || 'Invalid API key. Please try again.';
+                configureApiKey.disabled = false;
+                configureApiKey.textContent = 'Configure';
+            }
         });
         
         socket.on('disconnect', () => {
@@ -643,14 +770,43 @@
             const message = messageInput.value.trim();
             if (!message) return;
             
+            // Check if API key is configured
+            if (!apiKeyConfigured && !message.toLowerCase().includes('configure')) {
+                // Show API key setup if not configured
+                apiKeySetup.classList.remove('hidden');
+                apiKeyInput.focus();
+                return;
+            }
+            
             socket.emit('chat_message', { message });
             messageInput.value = '';
+        }
+        
+        function configureApiKeyFromInput() {
+            const apiKey = apiKeyInput.value.trim();
+            if (!apiKey) {
+                alert('Please enter an API key');
+                return;
+            }
+            
+            configureApiKey.disabled = true;
+            configureApiKey.textContent = 'Configuring...';
+            
+            socket.emit('configure_api_key', { apiKey });
         }
         
         sendButton.addEventListener('click', sendMessage);
         messageInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
                 sendMessage();
+            }
+        });
+        
+        // API Key setup event listeners
+        configureApiKey.addEventListener('click', configureApiKeyFromInput);
+        apiKeyInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                configureApiKeyFromInput();
             }
         });
         
@@ -742,6 +898,13 @@
         }
         
         function executeTool(toolName, button) {
+            // Check if API key is configured for tools other than configure
+            if (!apiKeyConfigured && toolName !== 'bitbadges_configure') {
+                apiKeySetup.classList.remove('hidden');
+                apiKeyInput.focus();
+                return;
+            }
+            
             const form = button.parentElement;
             const inputs = form.querySelectorAll('input, textarea');
             const args = {};
@@ -774,9 +937,14 @@
             }
         }
         
-        // Focus input on load
+        // Focus appropriate input on load
         window.addEventListener('load', () => {
-            messageInput.focus();
+            // Focus API key input if not configured, otherwise focus message input
+            if (!apiKeyConfigured) {
+                apiKeyInput.focus();
+            } else {
+                messageInput.focus();
+            }
         });
     </script>
 </body>

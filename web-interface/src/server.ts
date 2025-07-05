@@ -143,6 +143,14 @@ class MCPServerManager {
     return this.sendRequest('tools/call', { name, arguments: arguments_ });
   }
 
+  async callToolWithApiKey(name: string, arguments_: any, apiKey?: string) {
+    // If API key is provided, configure it first (unless it's the configure tool itself)
+    if (apiKey && name !== 'bitbadges_configure') {
+      await this.sendRequest('tools/call', { name: 'bitbadges_configure', arguments: { apiKey } });
+    }
+    return this.sendRequest('tools/call', { name, arguments: arguments_ });
+  }
+
   stop() {
     if (this.mcpProcess) {
       this.mcpProcess.kill();
@@ -167,17 +175,30 @@ interface ChatMessage {
   };
 }
 
-let chatHistory: ChatMessage[] = [];
+// Session-based chat histories - each socket gets its own chat history
+const chatSessions = new Map<string, ChatMessage[]>();
+
+// Session-based API key storage - each socket gets its own API key
+const apiKeySessions = new Map<string, string>();
 
 // Socket.IO connection handling
 io.on('connection', (socket: any) => {
   console.log('Client connected:', socket.id);
 
-  // Send chat history to new clients
-  socket.emit('chat_history', chatHistory);
+  // Initialize empty chat history for new session
+  chatSessions.set(socket.id, []);
+  
+  // Send empty chat history to new clients (fresh conversation)
+  socket.emit('chat_history', []);
+  
+  // Check if API key is configured for this session
+  const hasApiKey = apiKeySessions.has(socket.id);
+  socket.emit('api_key_status', { configured: hasApiKey });
 
   // Handle chat messages
   socket.on('chat_message', async (data: { message: string }) => {
+    const sessionHistory = chatSessions.get(socket.id) || [];
+    
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
       type: 'user',
@@ -185,12 +206,13 @@ io.on('connection', (socket: any) => {
       timestamp: new Date()
     };
 
-    chatHistory.push(userMessage);
-    io.emit('new_message', userMessage);
+    sessionHistory.push(userMessage);
+    chatSessions.set(socket.id, sessionHistory);
+    socket.emit('new_message', userMessage);
 
     try {
       // Process the message and determine if it's a tool call
-      const response = await processUserMessage(data.message);
+      const response = await processUserMessage(data.message, socket.id);
       
       const assistantMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
@@ -200,8 +222,9 @@ io.on('connection', (socket: any) => {
         toolCall: response.toolCall
       };
 
-      chatHistory.push(assistantMessage);
-      io.emit('new_message', assistantMessage);
+      sessionHistory.push(assistantMessage);
+      chatSessions.set(socket.id, sessionHistory);
+      socket.emit('new_message', assistantMessage);
 
     } catch (error: any) {
       const errorMessage: ChatMessage = {
@@ -211,15 +234,18 @@ io.on('connection', (socket: any) => {
         timestamp: new Date()
       };
 
-      chatHistory.push(errorMessage);
-      io.emit('new_message', errorMessage);
+      sessionHistory.push(errorMessage);
+      chatSessions.set(socket.id, sessionHistory);
+      socket.emit('new_message', errorMessage);
     }
   });
 
   // Handle direct tool calls
   socket.on('tool_call', async (data: { toolName: string; arguments: any }) => {
+    const sessionHistory = chatSessions.get(socket.id) || [];
+    
     try {
-      const result = await mcpManager.callTool(data.toolName, data.arguments);
+      const result = await mcpManager.callToolWithApiKey(data.toolName, data.arguments, apiKeySessions.get(socket.id));
       
       const toolMessage: ChatMessage = {
         id: Date.now().toString(),
@@ -233,8 +259,9 @@ io.on('connection', (socket: any) => {
         }
       };
 
-      chatHistory.push(toolMessage);
-      io.emit('new_message', toolMessage);
+      sessionHistory.push(toolMessage);
+      chatSessions.set(socket.id, sessionHistory);
+      socket.emit('new_message', toolMessage);
 
     } catch (error: any) {
       const errorMessage: ChatMessage = {
@@ -249,8 +276,9 @@ io.on('connection', (socket: any) => {
         }
       };
 
-      chatHistory.push(errorMessage);
-      io.emit('new_message', errorMessage);
+      sessionHistory.push(errorMessage);
+      chatSessions.set(socket.id, sessionHistory);
+      socket.emit('new_message', errorMessage);
     }
   });
 
@@ -264,13 +292,39 @@ io.on('connection', (socket: any) => {
     }
   });
 
+  // Handle API key configuration
+  socket.on('configure_api_key', (data: { apiKey: string }) => {
+    if (data.apiKey && data.apiKey.trim()) {
+      apiKeySessions.set(socket.id, data.apiKey.trim());
+      socket.emit('api_key_configured', { success: true });
+      
+      // Add system message about successful configuration
+      const sessionHistory = chatSessions.get(socket.id) || [];
+      const configMessage: ChatMessage = {
+        id: Date.now().toString(),
+        type: 'system',
+        content: '🔑 API key configured successfully! You can now use BitBadges tools.',
+        timestamp: new Date()
+      };
+      sessionHistory.push(configMessage);
+      chatSessions.set(socket.id, sessionHistory);
+      socket.emit('new_message', configMessage);
+    } else {
+      socket.emit('api_key_configured', { success: false, error: 'Invalid API key' });
+    }
+  });
+
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
+    // Clean up session data when client disconnects
+    chatSessions.delete(socket.id);
+    apiKeySessions.delete(socket.id);
   });
 });
 
 // Process user messages and determine tool calls
-async function processUserMessage(message: string): Promise<{ content: string; toolCall?: any }> {
+async function processUserMessage(message: string, socketId: string): Promise<{ content: string; toolCall?: any }> {
+  const userApiKey = apiKeySessions.get(socketId);
   const lowerMessage = message.toLowerCase();
 
   // Simple command parsing
@@ -278,6 +332,7 @@ async function processUserMessage(message: string): Promise<{ content: string; t
     const apiKeyMatch = message.match(/api[_\s]?key[:\s]+([a-zA-Z0-9\-_]+)/i);
     if (apiKeyMatch) {
       const apiKey = apiKeyMatch[1];
+      apiKeySessions.set(socketId, apiKey);
       const result = await mcpManager.callTool('bitbadges_configure', { apiKey });
       return {
         content: 'API key configured successfully! You can now use BitBadges tools.',
@@ -293,8 +348,15 @@ async function processUserMessage(message: string): Promise<{ content: string; t
     };
   }
 
+  // Check if API key is configured for non-configure commands
+  if (!userApiKey && !lowerMessage.includes('configure')) {
+    return {
+      content: '🔑 Please configure your API key first using the setup form above or by typing: "configure api key YOUR_API_KEY"'
+    };
+  }
+
   if (lowerMessage.includes('status') || lowerMessage.includes('health')) {
-    const result = await mcpManager.callTool('bitbadges_get_status', {});
+    const result = await mcpManager.callToolWithApiKey('bitbadges_get_status', {}, userApiKey);
     return {
       content: 'Fetched BitBadges API status.',
       toolCall: {
@@ -309,7 +371,7 @@ async function processUserMessage(message: string): Promise<{ content: string; t
     const searchMatch = message.match(/search[:\s]+(.+)/i);
     if (searchMatch) {
       const searchValue = searchMatch[1].trim();
-      const result = await mcpManager.callTool('bitbadges_search', { searchValue });
+      const result = await mcpManager.callToolWithApiKey('bitbadges_search', { searchValue }, userApiKey);
       return {
         content: `Searched for "${searchValue}"`,
         toolCall: {
@@ -330,7 +392,7 @@ async function processUserMessage(message: string): Promise<{ content: string; t
     
     if (addressMatch) {
       const address = addressMatch[0];
-      const result = await mcpManager.callTool('bitbadges_get_account', { address });
+      const result = await mcpManager.callToolWithApiKey('bitbadges_get_account', { address }, userApiKey);
       return {
         content: `Fetched account information for ${address}`,
         toolCall: {
@@ -341,7 +403,7 @@ async function processUserMessage(message: string): Promise<{ content: string; t
       };
     } else if (usernameMatch) {
       const username = usernameMatch[1];
-      const result = await mcpManager.callTool('bitbadges_get_account', { username });
+      const result = await mcpManager.callToolWithApiKey('bitbadges_get_account', { username }, userApiKey);
       return {
         content: `Fetched account information for username: ${username}`,
         toolCall: {
@@ -360,9 +422,9 @@ async function processUserMessage(message: string): Promise<{ content: string; t
     const collectionMatch = message.match(/collection[:\s]+(\d+)/i);
     if (collectionMatch) {
       const collectionId = collectionMatch[1];
-      const result = await mcpManager.callTool('bitbadges_get_collections', {
+      const result = await mcpManager.callToolWithApiKey('bitbadges_get_collections', {
         collectionsToFetch: [{ collectionId }]
-      });
+      }, userApiKey);
       return {
         content: `Fetched information for collection ${collectionId}`,
         toolCall: {
@@ -378,11 +440,14 @@ async function processUserMessage(message: string): Promise<{ content: string; t
   }
 
   // Default response with available commands
+  if (!userApiKey) {
+    return {
+      content: '🔑 Please configure your API key first using the setup form above or by typing: "configure api key YOUR_API_KEY"'
+    };
+  }
+
   return {
     content: `I can help you interact with BitBadges! Try these commands:
-
-🔧 **Configuration:**
-- "configure api key YOUR_KEY" - Set up your API key
 
 📊 **Status & Search:**
 - "status" - Check API health
